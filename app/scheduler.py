@@ -75,20 +75,22 @@ async def scan_movie(movie: MovieConfig, manual: bool = False, send_whatsapp: bo
 
         # Send current status report if this is a manual trigger
         if manual and snapshots:
-            if send_whatsapp:
-                try:
-                    from app.notifier.whatsapp import WhatsAppNotifier
-                    wa_notifier = WhatsAppNotifier()
-                    await wa_notifier.send_status_report(movie.name, snapshots)
-                except Exception as e:
-                    logger.error(f"[Scheduler] Failed to send manual WhatsApp status report: {e}")
-            else:
-                try:
-                    from app.notifier.telegram import TelegramNotifier
-                    tel_notifier = TelegramNotifier()
-                    await tel_notifier.send_status_report(movie.name, snapshots)
-                except Exception as e:
-                    logger.error(f"[Scheduler] Failed to send manual status report: {e}")
+            logger.info(f"[Scheduler] Sending manual status report for '{movie.name}' to Telegram and WhatsApp")
+            # 1. Send to Telegram
+            try:
+                from app.notifier.telegram import TelegramNotifier
+                tel_notifier = TelegramNotifier()
+                await tel_notifier.send_status_report(movie.name, snapshots)
+            except Exception as e:
+                logger.error(f"[Scheduler] Failed to send Telegram status report: {e}")
+
+            # 2. Send to WhatsApp
+            try:
+                from app.notifier.whatsapp import WhatsAppNotifier
+                wa_notifier = WhatsAppNotifier()
+                await wa_notifier.send_status_report(movie.name, snapshots)
+            except Exception as e:
+                logger.error(f"[Scheduler] Failed to send WhatsApp status report: {e}")
 
         logger.info(f"[Scheduler] Scan complete for '{movie.name}'")
     finally:

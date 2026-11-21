@@ -131,6 +131,54 @@ async def health():
     return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
 
 
+@app.get("/debug/bms", tags=["Debug"])
+async def debug_bms():
+    """Debug BookMyShow API and parser live on the server."""
+    from app.parsers.bms import BookMyShowParser, _extract_event_and_date, _BMS_API_URL, _BMS_API_HEADERS
+    url = "https://in.bookmyshow.com/movies/chennai/avengers-doomsday/buytickets/ET00526306/20261218?etCodes=*&language=english&refEventCode=ET00526306"
+    ec, dc, rc = _extract_event_and_date(url)
+    
+    api_status = None
+    api_body_len = 0
+    api_sample = ""
+    api_error = None
+    try:
+        params = {
+            "appCode": "MOBAND2",
+            "appVersion": "14710",
+            "language": "EN",
+            "eventCode": ec,
+            "regionCode": rc,
+            "subRegion": rc,
+            "bmsId": "1.21.0.1",
+            "token": "",
+            "lat": "",
+            "lon": "",
+            "myLocation": "",
+            "dateCode": dc,
+            "hammerfest": rc,
+        }
+        async with httpx.AsyncClient(timeout=15, headers=_BMS_API_HEADERS, follow_redirects=True) as client:
+            resp = await client.get(_BMS_API_URL, params=params)
+            api_status = resp.status_code
+            api_body_len = len(resp.text)
+            api_sample = resp.text[:300]
+    except Exception as e:
+        api_error = str(e)
+        
+    p = BookMyShowParser()
+    snap = await p.fetch(url, "Avengers: Doomsday")
+    return {
+        "params": {"eventCode": ec, "dateCode": dc, "region": rc},
+        "api_status": api_status,
+        "api_body_len": api_body_len,
+        "api_sample": api_sample,
+        "api_error": api_error,
+        "theatres_found": len(snap.theatres),
+        "theatres": [f"{t.theatre} ({len(t.shows)} shows)" for t in snap.theatres],
+    }
+
+
 @app.get("/status", response_model=ScanStatus, tags=["System"])
 async def status():
     """Return current monitoring status."""

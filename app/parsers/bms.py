@@ -19,9 +19,11 @@ import re
 from datetime import datetime
 from typing import Any
 
-import httpx
+from curl_cffi import requests as curl_requests
 from bs4 import BeautifulSoup
 from loguru import logger
+
+_CURL_IMPERSONATE_PROFILES = ["chrome124", "chrome120", "safari17_0"]
 
 from app.browser import browser_pool
 from app.models import ShowEntry, SourceSnapshot
@@ -135,15 +137,28 @@ class BookMyShowParser(BaseParser):
             "dateCode": date_code,
             "hammerfest": region_code,
         }
-        try:
-            async with httpx.AsyncClient(timeout=20, headers=_BMS_API_HEADERS, follow_redirects=True) as client:
-                resp = await client.get(_BMS_API_URL, params=params)
-                if resp.status_code != 200:
-                    logger.warning(f"[BMS API] HTTP {resp.status_code}")
-                    return SourceSnapshot(source="bookmyshow", movie_name=movie_name, url=source_url, theatres=[])
-                data = resp.json()
-        except Exception as e:
-            logger.warning(f"[BMS API] Request failed: {e}")
+        data = None
+        for profile in _CURL_IMPERSONATE_PROFILES:
+            try:
+                resp = await asyncio.to_thread(
+                    curl_requests.get,
+                    _BMS_API_URL,
+                    params=params,
+                    headers=_BMS_API_HEADERS,
+                    impersonate=profile,
+                    timeout=20,
+                )
+                if resp.status_code == 200:
+                    logger.info(f"[BMS API] Got 200 with impersonate={profile}")
+                    data = resp.json()
+                    break
+                else:
+                    logger.warning(f"[BMS API] HTTP {resp.status_code} with impersonate={profile}, trying next...")
+            except Exception as e:
+                logger.warning(f"[BMS API] Request failed with impersonate={profile}: {e}")
+
+        if data is None:
+            logger.warning("[BMS API] All impersonate profiles failed")
             return SourceSnapshot(source="bookmyshow", movie_name=movie_name, url=source_url, theatres=[])
 
         return self._parse_api_response(data, source_url, movie_name)

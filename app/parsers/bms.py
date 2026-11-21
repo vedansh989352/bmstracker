@@ -2,19 +2,14 @@
 ShowPulser – BookMyShow Parser
 Strategy: parse window.__INITIAL_STATE__ JSON injected into the HTML.
 
-Data path (confirmed from live HTML):
-  state["showtimesByEvent"]["showDates"][DATE]["dynamic"]["data"]["showtimeWidgets"]
-      → find widget where type=="groupList"
-      → widget["data"][0]["data"]  → list of venue-cards
-      → each card:
-          card["additionalData"]["venueCode"] → venue code
-          card["showtimes"]                  → list of {title: "03:20 PM", screenAttr: "SC 1 DOLBY ATMOS"}
+Data path:
+  state["showtimesFunctionalApi"]["queries"][qk]["data"]
+  or state["showtimesByEvent"]["showDates"][DATE]
+  → showtimeWidgets → groupList / venue-card
+  → card["showtimes"] → list of showtime objects
+  → venueName from card or static venues dictionary
 
-  state["showtimesByEvent"]["showDates"][DATE]["primaryStatic"]["data"]["venues"][venueCode]["venueName"]
-      → "Rakki Cinemas: OMR, Kelambakkam"
-
-Booking open = the card has ≥1 showtime entry.
-If no __INITIAL_STATE__ or parse fails, fall back to DOM scraping.
+If no __INITIAL_STATE__ or parse fails, fall back to robust DOM scraping.
 """
 from __future__ import annotations
 
@@ -107,64 +102,98 @@ class BookMyShowParser(BaseParser):
 
         theatres: list[ShowEntry] = []
 
-        # Strategy 1A: Parse showtimesFunctionalApi (New RTK Query format)
+        # Build a venue lookup map from any static venue data in state
+        venue_lookup: dict[str, str] = {}
+        try:
+            for k, v in state.items():
+                if isinstance(v, dict):
+                    for subk, subv in v.items():
+                        if isinstance(subv, dict) and "venues" in subv and isinstance(subv["venues"], dict):
+                            for vcode, vinfo in subv["venues"].items():
+                                if isinstance(vinfo, dict) and "venueName" in vinfo:
+                                    venue_lookup[vcode] = vinfo["venueName"]
+        except Exception:
+            pass
+
+        # Strategy 1A: Parse showtimesFunctionalApi (RTK Query format)
         try:
             sfa = state.get("showtimesFunctionalApi", {})
             queries = sfa.get("queries", {})
             for qk, qv in queries.items():
+                if not isinstance(qv, dict):
+                    continue
                 if "fetchPrimaryDynamic" in qk or "fetchStaticShowtimes" in qk:
-                    idata = qv.get("data", {}).get("data", {})
-                    widgets = idata.get("showtimeWidgets", [])
+                    raw_data = qv.get("data", {})
+                    idata = raw_data.get("data", {}) if isinstance(raw_data, dict) and "data" in raw_data else raw_data
+                    widgets = (
+                        (idata.get("showtimeWidgets") if isinstance(idata, dict) else None)
+                        or (raw_data.get("showtimeWidgets") if isinstance(raw_data, dict) else None)
+                        or []
+                    )
                     for w in widgets:
-                        if w.get("type") == "groupList":
-                            for g in w.get("data", []):
-                                for card in g.get("data", []):
-                                    if card.get("type") == "venue-card":
-                                        add_data = card.get("additionalData", {})
-                                        name = add_data.get("venueName") or card.get("title") or ""
-                                        name = name.strip()
-                                        if not name or len(name) < 3:
-                                            continue
+                        if not isinstance(w, dict):
+                            continue
+                        for g in w.get("data", []):
+                            if not isinstance(g, dict):
+                                continue
+                            cards = g.get("data", []) if isinstance(g.get("data"), list) else [g]
+                            for card in cards:
+                                if not isinstance(card, dict):
+                                    continue
+                                add_data = card.get("additionalData", {})
+                                venue_code = add_data.get("venueCode", "")
+                                name = (
+                                    add_data.get("venueName")
+                                    or venue_lookup.get(venue_code)
+                                    or card.get("title")
+                                    or card.get("name")
+                                    or ""
+                                ).strip()
 
-                                        raw_shows = []
-                                        if "showtimes" in card and isinstance(card["showtimes"], list):
-                                            raw_shows.extend(card["showtimes"])
-                                        if "showtimesSections" in card and isinstance(card["showtimesSections"], list):
-                                            for sec in card["showtimesSections"]:
-                                                if isinstance(sec, dict) and "showtimes" in sec:
-                                                    raw_shows.extend(sec["showtimes"])
+                                if not name or len(name) < 3:
+                                    continue
 
-                                        shows: list[str] = []
-                                        formats: set[str] = set()
+                                raw_shows = []
+                                if "showtimes" in card and isinstance(card["showtimes"], list):
+                                    raw_shows.extend(card["showtimes"])
+                                if "showtimesSections" in card and isinstance(card["showtimesSections"], list):
+                                    for sec in card["showtimesSections"]:
+                                        if isinstance(sec, dict) and "showtimes" in sec:
+                                            raw_shows.extend(sec["showtimes"])
 
-                                        for st_item in raw_shows:
-                                            title = (
-                                                st_item.get("title")
-                                                or st_item.get("additionalData", {}).get("showTime")
-                                                or ""
-                                            ).strip()
-                                            if title:
-                                                shows.append(title)
-                                            screen_attr = (
-                                                st_item.get("screenAttr")
-                                                or st_item.get("additionalData", {}).get("attributes")
-                                                or ""
-                                            ).strip()
-                                            for fmt in _extract_formats(screen_attr):
-                                                formats.add(fmt)
+                                shows: list[str] = []
+                                formats: set[str] = set()
 
-                                        url_fmt = _format_from_url(url)
-                                        if url_fmt:
-                                            formats.add(url_fmt)
+                                for st_item in raw_shows:
+                                    if not isinstance(st_item, dict):
+                                        continue
+                                    title = (
+                                        st_item.get("title")
+                                        or st_item.get("additionalData", {}).get("showTime")
+                                        or ""
+                                    ).strip()
+                                    if title:
+                                        shows.append(title)
+                                    screen_attr = (
+                                        st_item.get("screenAttr")
+                                        or st_item.get("additionalData", {}).get("attributes")
+                                        or ""
+                                    ).strip()
+                                    for fmt in _extract_formats(screen_attr):
+                                        formats.add(fmt)
 
-                                        booking_open = bool(shows)
-                                        theatres.append(ShowEntry(
-                                            theatre=name,
-                                            shows=shows,
-                                            formats=sorted(formats),
-                                            booking_open=booking_open,
-                                            booking_url=url if booking_open else None,
-                                        ))
+                                url_fmt = _format_from_url(url)
+                                if url_fmt:
+                                    formats.add(url_fmt)
+
+                                booking_open = bool(shows)
+                                theatres.append(ShowEntry(
+                                    theatre=name,
+                                    shows=shows,
+                                    formats=sorted(formats),
+                                    booking_open=booking_open,
+                                    booking_url=url if booking_open else None,
+                                ))
         except Exception as e:
             logger.warning(f"[BMS] Error parsing showtimesFunctionalApi: {e}")
 
@@ -174,6 +203,8 @@ class BookMyShowParser(BaseParser):
                 stbe = state.get("showtimesByEvent", {})
                 show_dates = stbe.get("showDates", {})
                 for date_key, date_data in show_dates.items():
+                    if not isinstance(date_data, dict):
+                        continue
                     static_venues: dict = (
                         date_data.get("primaryStatic", {})
                         .get("data", {})
@@ -185,23 +216,32 @@ class BookMyShowParser(BaseParser):
                         .get("showtimeWidgets", [])
                     )
                     gl_widget = next(
-                        (w for w in dynamic_widgets if w.get("type") == "groupList"),
+                        (w for w in dynamic_widgets if isinstance(w, dict) and w.get("type") == "groupList"),
                         None
                     )
                     if not gl_widget:
                         continue
                     for group in gl_widget.get("data", []):
+                        if not isinstance(group, dict):
+                            continue
                         for card in group.get("data", []):
-                            if card.get("type") != "venue-card":
+                            if not isinstance(card, dict) or card.get("type") != "venue-card":
                                 continue
                             venue_code = card.get("additionalData", {}).get("venueCode", "")
-                            name = static_venues.get(venue_code, {}).get("venueName", "").strip()
+                            name = (
+                                static_venues.get(venue_code, {}).get("venueName")
+                                or venue_lookup.get(venue_code)
+                                or card.get("title")
+                                or ""
+                            ).strip()
                             if not name or len(name) < 3:
                                 continue
                             raw_shows = card.get("showtimes", [])
                             shows: list[str] = []
                             formats: set[str] = set()
                             for st in raw_shows:
+                                if not isinstance(st, dict):
+                                    continue
                                 title = st.get("title", "").strip()
                                 if title:
                                     shows.append(title)
@@ -221,25 +261,34 @@ class BookMyShowParser(BaseParser):
             except Exception as e:
                 logger.warning(f"[BMS] Error walking showtimesByEvent: {e}")
 
-        logger.info(f"[BMS JSON] Parsed {len(theatres)} theatre(s)")
-        return SourceSnapshot(source="bookmyshow", movie_name=movie_name, url=url, theatres=theatres)
+        # Deduplicate
+        seen: set[str] = set()
+        unique_theatres: list[ShowEntry] = []
+        for t in theatres:
+            k = t.theatre.lower().strip()
+            if k not in seen:
+                seen.add(k)
+                unique_theatres.append(t)
+
+        logger.info(f"[BMS JSON] Parsed {len(unique_theatres)} theatre(s)")
+        return SourceSnapshot(source="bookmyshow", movie_name=movie_name, url=url, theatres=unique_theatres)
 
     # ── DOM fallback ──────────────────────────────────────────────────────────
     def _parse_dom(self, html: str, url: str, movie_name: str) -> SourceSnapshot:
-        """
-        Fallback DOM parser using sc-1vhizuf-1 showtime buttons.
-        Groups buttons by their nearest venue anchor (walk up to find anchor
-        with href containing bookmyshow.com/cinemas).
-        """
         soup = BeautifulSoup(html, "lxml")
         theatres: list[ShowEntry] = []
 
+        # Find any candidate showtime elements (buttons, links, spans, divs with time text)
         btns = soup.find_all(
-            lambda t: t.name and any(_SHOWTIME_BTN_CLASS in c for c in t.get("class", []))
+            lambda t: t.name in ("a", "button", "div", "span")
+            and (
+                any(_SHOWTIME_BTN_CLASS in c or "showtime" in c.lower() for c in t.get("class", []))
+                or (_TIME_RE.search(t.get_text()) and len(t.get_text().strip()) <= 15)
+            )
         )
-        logger.debug(f"[BMS DOM] Showtime buttons: {len(btns)}")
+        logger.debug(f"[BMS DOM] Showtime candidates: {len(btns)}")
 
-        # Group by container (nearest common parent that contains a cinema anchor)
+        # Group by container (nearest common parent that contains a cinema anchor or venue title)
         seen: set[int] = set()
         containers: list = []
         for btn in btns:
@@ -247,7 +296,7 @@ class BookMyShowParser(BaseParser):
             for _ in range(15):
                 if el is None:
                     break
-                anchor = el.find("a", href=re.compile(r"bookmyshow\.com/cinemas/"))
+                anchor = el.find("a", href=re.compile(r"/cinemas/|bookmyshow\.com/cinemas/"))
                 if anchor and len(anchor.get_text(strip=True)) > 3:
                     eid = id(el)
                     if eid not in seen:
@@ -257,14 +306,18 @@ class BookMyShowParser(BaseParser):
                 el = el.parent
 
         for ctr in containers:
-            anchor = ctr.find("a", href=re.compile(r"bookmyshow\.com/cinemas/"))
+            anchor = ctr.find("a", href=re.compile(r"/cinemas/|bookmyshow\.com/cinemas/"))
             name = anchor.get_text(strip=True) if anchor else ""
             if not name:
                 continue
 
             shows, formats = [], set()
             for btn in ctr.find_all(
-                lambda t: t.name and any(_SHOWTIME_BTN_CLASS in c for c in t.get("class", []))
+                lambda t: t.name in ("a", "button", "div", "span")
+                and (
+                    any(_SHOWTIME_BTN_CLASS in c or "showtime" in c.lower() for c in t.get("class", []))
+                    or (_TIME_RE.search(t.get_text()) and len(t.get_text().strip()) <= 15)
+                )
             ):
                 text = btn.get_text(separator=" ", strip=True)
                 m = _TIME_RE.search(text)
@@ -285,8 +338,17 @@ class BookMyShowParser(BaseParser):
                 booking_url=url if shows else None,
             ))
 
-        logger.info(f"[BMS DOM] Parsed {len(theatres)} theatre(s)")
-        return SourceSnapshot(source="bookmyshow", movie_name=movie_name, url=url, theatres=theatres)
+        # Deduplicate
+        seen_names: set[str] = set()
+        unique_theatres: list[ShowEntry] = []
+        for t in theatres:
+            k = t.theatre.lower().strip()
+            if k not in seen_names:
+                seen_names.add(k)
+                unique_theatres.append(t)
+
+        logger.info(f"[BMS DOM] Parsed {len(unique_theatres)} theatre(s)")
+        return SourceSnapshot(source="bookmyshow", movie_name=movie_name, url=url, theatres=unique_theatres)
 
 
 def _extract_formats(text: str) -> list[str]:

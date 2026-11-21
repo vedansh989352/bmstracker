@@ -12,7 +12,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
@@ -118,6 +118,12 @@ if _STATIC_DIR.exists():
 
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
+
+@app.get("/", include_in_schema=False)
+async def root():
+    """Redirect root domain to dashboard."""
+    return RedirectResponse(url="/dashboard")
+
 
 @app.get("/health", tags=["System"])
 async def health():

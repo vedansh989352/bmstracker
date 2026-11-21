@@ -93,6 +93,9 @@ class DistrictParser(BaseParser):
                 except Exception:
                     pass
 
+        target_date_match = re.search(r"fromdate=(\d{4}-\d{2}-\d{2})", url)
+        target_date = target_date_match.group(1) if target_date_match else None
+
         async with browser_pool.new_page() as page:
             page.on("response", on_response)
             try:
@@ -100,7 +103,18 @@ class DistrictParser(BaseParser):
                 await asyncio.sleep(2.5)
             except Exception as e:
                 logger.debug(f"[District] Load warning: {e}")
+            final_url = page.url
             html = await page.content()
+
+        # If a specific future date was requested but District redirected to a different date (e.g. today)
+        if target_date:
+            final_date_match = re.search(r"fromdate=(\d{4}-\d{2}-\d{2})", final_url)
+            if final_date_match and final_date_match.group(1) != target_date:
+                logger.info(
+                    f"[District] Target date {target_date} is not yet open on this page. "
+                    f"District redirected to {final_date_match.group(1)}. Treating as no shows yet."
+                )
+                return SourceSnapshot(source="district", movie_name=movie_name, url=url, theatres=[])
 
         if intercepted:
             snap = self._parse_xhr(intercepted, url, movie_name)

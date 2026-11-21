@@ -8,6 +8,7 @@ from app.models import ChangeEvent, ChangeType
 from app.notifier.telegram import TelegramNotifier, _escape
 from app.notifier.discord import DiscordNotifier, _pick_colour
 from app.notifier.whatsapp import WhatsAppNotifier
+from app.notifier.fast2sms import Fast2SMSNotifier
 
 
 def make_change(
@@ -128,3 +129,29 @@ class TestWhatsAppFormatter:
         changes = [make_change()]
         msg = self.notifier._build_message("Test Movie", changes, "https://bms.com/test")
         assert "https://bms.com/test" in msg
+
+
+# ── Fast2SMS Notifier ─────────────────────────────────────────────────────────
+
+class TestFast2SMSNotifier:
+    def setup_method(self):
+        self.notifier = Fast2SMSNotifier()
+
+    def test_clean_numbers(self):
+        raw = "9876543210, +919876543211, 09876543212, 123"
+        cleaned = self.notifier._clean_numbers(raw)
+        assert cleaned == "9876543210,9876543211,9876543212"
+
+    def test_theatre_filter_matching(self, monkeypatch):
+        from app.config import settings
+        monkeypatch.setattr(settings, "fast2sms_specific_theatres", "Sathyam, Palazzo, Luxe")
+        assert self.notifier._matches_specific_theatres("PVR Palazzo Chennai") is True
+        assert self.notifier._matches_specific_theatres("SPI Sathyam Cinemas") is True
+        assert self.notifier._matches_specific_theatres("Jazz Cinemas Luxe") is True
+        assert self.notifier._matches_specific_theatres("INOX Marina Mall") is False
+
+    def test_theatre_filter_empty_matches_all(self, monkeypatch):
+        from app.config import settings
+        monkeypatch.setattr(settings, "fast2sms_specific_theatres", "")
+        assert self.notifier._matches_specific_theatres("Any Random Theatre") is True
+

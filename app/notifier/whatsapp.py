@@ -50,6 +50,15 @@ class WhatsAppNotifier(BaseNotifier):
         if not changes:
             return True
 
+        # Optional theatre filter for WhatsApp (if configured, otherwise alerts for all theatres)
+        raw_filter = getattr(settings, "greenapi_specific_theatres", "") or ""
+        theatre_filter = [t.strip().lower() for t in raw_filter.split(",") if t.strip()]
+        if theatre_filter and "*" not in theatre_filter and "all" not in theatre_filter:
+            changes = [c for c in changes if any(term in c.theatre.lower() for term in theatre_filter)]
+            if not changes:
+                logger.info(f"[WhatsApp] No changes matched theatre filter '{raw_filter}'. Skipping WhatsApp.")
+                return True
+
         # Conserve WhatsApp message limit by filtering high-priority changes only
         allowed_types = {"new_theatre", "new_show", "booking_open"}
         filtered_changes = [c for c in changes if c.type in allowed_types]

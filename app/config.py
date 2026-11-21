@@ -31,6 +31,16 @@ class Settings(BaseSettings):
     greenapi_api_token:   str = ""   # from console.green-api.com
     greenapi_recipient:   str = ""   # digits only e.g. 919876543210
     greenapi_api_url:     str = "https://api.green-api.com"  # instance-specific URL
+    greenapi_specific_theatres: str = ""  # Optional: specific theatre keywords or leave empty for all
+
+    # ── Fast2SMS (SMS & Automated Voice Call) ─────────────────────
+    fast2sms_api_key: str = ""            # Fast2SMS Dev API key
+    fast2sms_numbers: str = ""            # Comma-separated 10-digit numbers (e.g. 9876543210)
+    fast2sms_route: str = "q"             # "q" for Quick SMS, "dlt", or "otp"
+    fast2sms_voice_file_id: str = ""      # Approved voice file_id for OBD voice call
+    fast2sms_specific_theatres: str = ""  # Comma-separated list of specific theatre keywords, e.g. "Sathyam, Palazzo, Luxe, PVR"
+    fast2sms_enable_sms: bool = True      # Send SMS alert on specific theatre updates
+    fast2sms_enable_call: bool = True     # Trigger voice call on specific theatre updates
 
     # ── Email (SMTP) ──────────────────────────────────────────────────
     smtp_host: str = "smtp.gmail.com"
@@ -40,7 +50,11 @@ class Settings(BaseSettings):
     smtp_to: str = ""
 
     # ── Scheduler ─────────────────────────────────────────────────────
-    scan_interval_seconds: int = 180
+    scan_interval_seconds: int = 300      # 5 minutes (300 seconds)
+    notify_only_new_theatres: bool = True # Only notify when a new theatre is added or opens booking
+
+    # ── Render / Keep-Alive Activator ─────────────────────────────────
+    keep_alive_url: str = ""              # e.g. https://your-service.onrender.com (auto-detected on Render)
 
     # ── App ───────────────────────────────────────────────────────────
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
@@ -49,8 +63,8 @@ class Settings(BaseSettings):
     snapshots_dir: str = "snapshots"
     logs_dir: str = "logs"
 
-    # Comma-separated list of enabled notifiers
-    enabled_notifiers: str = "telegram"
+    # Comma-separated list of enabled notifiers (e.g. telegram, fast2sms, whatsapp)
+    enabled_notifiers: str = "telegram,fast2sms,whatsapp"
 
     @field_validator("database_path", mode="before")
     @classmethod

@@ -12,12 +12,16 @@ from app.models import ChangeEvent
 from app.notifier.base import BaseNotifier
 from app.notifier.discord import DiscordNotifier
 from app.notifier.email_notifier import EmailNotifier
+from app.notifier.fast2sms import Fast2SMSNotifier
 from app.notifier.telegram import TelegramNotifier
 from app.notifier.whatsapp import WhatsAppNotifier
 
 
 _ALL_NOTIFIERS: dict[str, type[BaseNotifier]] = {
     "telegram": TelegramNotifier,
+    "fast2sms": Fast2SMSNotifier,
+    "fast2sms_sms": Fast2SMSNotifier,
+    "fast2sms_call": Fast2SMSNotifier,
     "discord": DiscordNotifier,
     "whatsapp": WhatsAppNotifier,
     "email": EmailNotifier,
@@ -37,8 +41,9 @@ def _build_notifiers() -> list[BaseNotifier]:
     return notifiers
 
 
-# Build once at import time
-_notifiers: list[BaseNotifier] = _build_notifiers()
+def get_notifiers() -> list[BaseNotifier]:
+    """Returns all currently enabled notifiers based on active settings."""
+    return _build_notifiers()
 
 
 async def dispatch(
@@ -56,6 +61,22 @@ async def dispatch(
     if not changes:
         return 0
 
+    # ── Filter for New Theatres Only (if configured) ──────────────────────────
+    if getattr(settings, "notify_only_new_theatres", False):
+        theatre_changes = [
+            c for c in changes
+            if c.type in {"new_theatre", "booking_open"}
+        ]
+        if not theatre_changes:
+            logger.info(
+                f"[Dispatcher] Skipping notification: changes found, but notify_only_new_theatres is enabled "
+                f"and no new theatres or booking open events occurred."
+            )
+            return 0
+        changes = theatre_changes
+
+    active_notifiers = get_notifiers()
+
     # ── Deduplication ──────────────────────────────────────────────────────────
     new_changes: list[ChangeEvent] = []
     for change in changes:
@@ -71,7 +92,7 @@ async def dispatch(
 
     logger.info(
         f"[Dispatcher] Sending {len(new_changes)} new change(s) for '{movie_name}' "
-        f"via {[n.name for n in _notifiers]}"
+        f"via {[n.name for n in active_notifiers]}"
     )
 
     # ── Send via all enabled notifiers concurrently ────────────────────────────
@@ -85,8 +106,15 @@ async def dispatch(
         except Exception as e:
             logger.error(f"[{notifier.name.title()}] Unexpected error: {e}")
 
-    # Sort notifiers to prioritize whatsapp and initiate it first
-    sorted_notifiers = sorted(_notifiers, key=lambda n: 0 if n.name == "whatsapp" else 1)
+    # Prioritize urgent channels first (fast2sms, whatsapp)
+    def _priority(n: BaseNotifier) -> int:
+        if n.name in ("fast2sms", "fast2sms_call", "fast2sms_sms"):
+            return 0
+        if n.name == "whatsapp":
+            return 1
+        return 2
+
+    sorted_notifiers = sorted(active_notifiers, key=_priority)
 
     import asyncio
     await asyncio.gather(*(safe_send(notifier) for notifier in sorted_notifiers))

@@ -17,9 +17,25 @@ services:
         sync: false
       - key: GREENAPI_API_URL
         sync: false
+      - key: FAST2SMS_API_KEY
+        sync: false
+      - key: FAST2SMS_NUMBERS
+        sync: false
+      - key: FAST2SMS_SPECIFIC_THEATRES
+        value: "Seven Screen, Raakki, Raaki"
+      - key: FAST2SMS_VOICE_FILE_ID
+        value: "5665"
+      - key: FAST2SMS_ENABLE_SMS
+        value: "true"
+      - key: FAST2SMS_ENABLE_CALL
+        value: "true"
       - key: ENABLED_NOTIFIERS
-        value: telegram,whatsapp
+        value: telegram,fast2sms,whatsapp
       - key: SCAN_INTERVAL_SECONDS
-        value: "180"
+        value: "300"
+      - key: NOTIFY_ONLY_NEW_THEATRES
+        value: "true"
+      - key: KEEP_ALIVE_URL
+        sync: false
       - key: DATABASE_URL
         sync: false

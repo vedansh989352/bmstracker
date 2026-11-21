@@ -20,19 +20,19 @@ async def run():
     
     movies_to_seed = [
         MovieConfig(
-            name="Spider-Man: Brand New Day (Regular/3D)",
+            name="Avengers: Doomsday (English)",
             city="Chennai",
-            bms_url="https://in.bookmyshow.com/movies/chennai/spider-man-brand-new-day/buytickets/ET00502600/20260801?etCodes=*&language=english&refEventCode=ET00502600",
-            district_url="https://www.district.in/movies/spider-man-brand-new-day-movie-tickets-in-chennai-MV194537?frmtid=rrfdpndypd&fromdate=2026-08-01",
-            interval=180,
+            bms_url="https://in.bookmyshow.com/movies/chennai/avengers-doomsday/buytickets/ET00526306/20261218?etCodes=*&language=english&refEventCode=ET00526306",
+            district_url="https://www.district.in/movies/avengers-doomsday-movie-tickets-in-chennai-MV176735?frmtid=Mm5dpqTqJz&fromdate=2026-12-18",
+            interval=300,
             enabled=True
         ),
         MovieConfig(
-            name="Spider-Man: Brand New Day (EPIQ 3D)",
+            name="Seven Screen Cinemas: Kilambakkam (Dune 3 & Doomsday)",
             city="Chennai",
-            bms_url="https://in.bookmyshow.com/movies/chennai/spider-man-brand-new-day-epiq-3d/buytickets/ET00505581/20260801",
-            district_url="",
-            interval=180,
+            bms_url="",
+            district_url="https://www.district.in/movies/seven-screen-s-cinemas-kilambakkam-chennai-CD1102122?fromdate=2026-12-18",
+            interval=300,
             enabled=True
         )
     ]

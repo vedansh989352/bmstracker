@@ -42,26 +42,31 @@ import httpx
 import asyncio
 
 async def self_pinger():
-    url = os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("EXTERNAL_URL")
+    url = (
+        os.environ.get("KEEP_ALIVE_URL")
+        or getattr(settings, "keep_alive_url", "")
+        or os.environ.get("RENDER_EXTERNAL_URL")
+        or os.environ.get("EXTERNAL_URL")
+    )
     if not url and os.environ.get("RENDER_SERVICE_NAME"):
         url = f"https://{os.environ['RENDER_SERVICE_NAME']}.onrender.com"
         
     if not url:
-        logger.info("[Pinger] RENDER_EXTERNAL_URL not set. Self-pinger disabled (normal for local runs).")
+        logger.info("[Pinger] RENDER_EXTERNAL_URL / KEEP_ALIVE_URL not set. Self-pinger disabled (normal for local runs).")
         return
     
     health_url = f"{url.rstrip('/')}/health"
-    logger.info(f"[Pinger] Starting self-pinger task targeting: {health_url}")
+    logger.info(f"[Pinger] Starting Render Activator keep-alive task targeting: {health_url}")
     
     while True:
-        await asyncio.sleep(180)  # Ping every 3 minutes to keep Render free instance active
+        await asyncio.sleep(180)  # Ping every 3 minutes so Render never sleeps after 15 minutes
         try:
-            async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
-                headers = {"User-Agent": "ShowPulser-SelfPinger/1.0"}
+            async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+                headers = {"User-Agent": "ShowPulser-RenderActivator/1.0"}
                 resp = await client.get(health_url, headers=headers)
-                logger.info(f"[Pinger] Self-ping status: {resp.status_code}")
+                logger.debug(f"[Pinger] Render keep-alive ping: {resp.status_code}")
         except Exception as e:
-            logger.error(f"[Pinger] Self-ping failed: {e}")
+            logger.warning(f"[Pinger] Render keep-alive ping attempt: {e}")
 
 
 # ── Lifespan ───────────────────────────────────────────────────────────────────

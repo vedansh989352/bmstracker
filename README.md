@@ -112,9 +112,10 @@ Logs and database are persisted to `./logs` and `./data` on your host machine.
 
 | Channel | Status | Notes |
 |---------|--------|-------|
-| Telegram | ✅ Ready | Free, instant — recommended |
+| Telegram | ✅ Ready | Free, instant — notifies for **all theatres** |
+| Fast2SMS | ✅ Ready | SMS & Automated Voice Call for **specific theatres** |
+| WhatsApp | ✅ Ready | Via Green API (free, QR code based) |
 | Discord | ✅ Ready | Webhook-based, rich embeds |
-| WhatsApp | ✅ Ready | Requires Twilio account |
 | Email | ✅ Ready | SMTP (Gmail, etc.) |
 
 ---

@@ -22,14 +22,14 @@ async def run():
     event = ChangeEvent(
         source="bookmyshow",
         type="booking_open",
-        theatre="Test Theatre",
-        detail="Theatre Added: Test Cinemas (OMR)",
-        booking_url="https://in.bookmyshow.com/movies/chennai/spider-man-brand-new-day/buytickets/ET00502600/20260730"
+        theatre="PVR Palazzo Chennai",
+        detail="Booking is now OPEN for Avengers: Doomsday!",
+        booking_url="https://in.bookmyshow.com/movies/chennai/avengers-doomsday/buytickets/ET00526306/20261218"
     )
     
     print("Sending live test WhatsApp message via Green API...")
     success = await notifier.send(
-        movie_name="Spider-Man: Brand New Day",
+        movie_name="Avengers: Doomsday",
         changes=[event],
         source_url="https://in.bookmyshow.com"
     )
